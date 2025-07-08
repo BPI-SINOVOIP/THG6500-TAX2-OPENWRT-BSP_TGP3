@@ -1,0 +1,11 @@
+diff -uprN a/wpa_supplicant/wps_supplicant.c b/wpa_supplicant/wps_supplicant.c
+--- a/wpa_supplicant/wps_supplicant.c	2024-04-08 15:58:24.717367498 +0800
++++ b/wpa_supplicant/wps_supplicant.c	2024-04-08 16:03:38.063595669 +0800
+@@ -483,6 +483,7 @@ static int wpa_supplicant_wps_cred(void
+ 		wpas_notify_network_added(wpa_s, ssid);
+ 	}
+ 
++	ssid->scan_ssid = 1;
+ 	wpa_config_set_network_defaults(ssid);
+ 	ssid->wps_run = wpa_s->wps_run;
+ 

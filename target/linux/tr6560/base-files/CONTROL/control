@@ -1,0 +1,10 @@
+Package: tri_bsp
+Version: b095-1.0
+Depends: libc, kmod-nf-conntrack
+Source: package/triductor/tri_bsp
+SourceName: tri_bsp
+Section: base
+SourceDateEpoch: 1742528124
+Architecture: arm_cortex-a9
+Installed-Size: 435298
+Description:  This module contains triductor bsp b095.

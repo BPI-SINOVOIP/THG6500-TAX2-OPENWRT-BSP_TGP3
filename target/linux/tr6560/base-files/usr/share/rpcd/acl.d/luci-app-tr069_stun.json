@@ -1,0 +1,11 @@
+{
+	"luci-app-tr069_stun": {
+		"description": "Grant UCI access for luci-app-tr069_stun",
+		"read": {
+			"uci": [ "tr069_stun" ]
+		},
+		"write": {
+			"uci": [ "tr069_stun" ]
+		}
+	}
+}

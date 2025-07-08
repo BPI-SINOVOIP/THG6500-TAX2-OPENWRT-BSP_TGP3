@@ -1,0 +1,9 @@
+
+config roam 'config'
+        option enable '0'
+        option band '5GHz'
+        option threshold_2g '-55'
+        option diff_rssi_2g '5'
+        option threshold_5g '-65'
+        option diff_rssi_5g '5'
+        option scan_time '10'  

@@ -1,0 +1,12 @@
+diff -uprN a/iwlib.c b/iwlib.c
+--- a/iwlib.c	2025-04-16 16:57:54.112885043 +0800
++++ b/iwlib.c	2025-04-16 16:57:07.376501402 +0800
+@@ -716,7 +716,7 @@ iw_get_basic_config(int			skfd,
+ 
+   /* Get ESSID */
+   wrq.u.essid.pointer = (caddr_t) info->essid;
+-  wrq.u.essid.length = IW_ESSID_MAX_SIZE + 1;
++  wrq.u.essid.length = IW_ESSID_MAX_SIZE + 2;
+   wrq.u.essid.flags = 0;
+   if(iw_get_ext(skfd, ifname, SIOCGIWESSID, &wrq) >= 0)
+     {

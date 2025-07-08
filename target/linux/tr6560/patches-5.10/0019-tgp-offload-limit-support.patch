@@ -1,0 +1,63 @@
+diff -Naru old/net/netfilter/nf_flow_table_ip.c new/net/netfilter/nf_flow_table_ip.c
+--- old/net/netfilter/nf_flow_table_ip.c	2024-12-03 13:32:45.990039444 +0800
++++ new/net/netfilter/nf_flow_table_ip.c	2024-11-26 15:39:37.289713967 +0800
+@@ -537,6 +537,7 @@
+ 	struct ipv6hdr *ip6h;
+ 	struct rt6_info *rt;
+ 	int ret;
++	__u32 mark;
+ 
+ 	dir = tuplehash->tuple.dir;
+ 	flow = container_of(tuplehash, struct flow_offload, tuplehash[dir]);
+@@ -579,6 +580,11 @@
+ 		return nf_flow_xmit_xfrm(skb, state, &rt->dst);
+ 	}
+ 
++	mark = flow->ct->mark & 0xFF;
++	if(unlikely(mark != 0)){
++		skb->mark = flow->ct->mark;
++	}
++
+ 	switch (tuplehash->tuple.xmit_type) {
+ 	case FLOW_OFFLOAD_XMIT_NEIGH:
+ 		rt = (struct rt6_info *)tuplehash->tuple.dst_cache;
+@@ -616,6 +622,7 @@
+ 	struct iphdr *iph;
+ 	__be32 nexthop;
+ 	int ret;
++	__u32 mark;
+ #if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
+ 	unsigned int l2tp_pos_len=0;
+ 	unsigned int is_ipv6=0;
+@@ -690,6 +697,11 @@
+ 		return nf_flow_xmit_xfrm(skb, state, &rt->dst);
+ 	}
+ 
++	mark = flow->ct->mark & 0xFF;
++	if(unlikely(mark != 0)){
++		skb->mark = flow->ct->mark;
++	}
++
+ 	switch (tuplehash->tuple.xmit_type) {
+ 	case FLOW_OFFLOAD_XMIT_NEIGH:
+ 		rt = (struct rtable *)tuplehash->tuple.dst_cache;
+@@ -877,6 +889,7 @@
+ 	struct ipv6hdr *ip6h;
+ 	struct rt6_info *rt;
+ 	int ret;
++	__u32 mark;
+ 
+ 	if (skb->protocol != htons(ETH_P_IPV6) &&
+ 	    !nf_flow_skb_encap_protocol(skb, htons(ETH_P_IPV6), &offset))
+@@ -930,6 +943,11 @@
+ 		return nf_flow_xmit_xfrm(skb, state, &rt->dst);
+ 	}
+ 
++	mark = flow->ct->mark & 0xFF;
++	if(unlikely(mark != 0)){
++		skb->mark = flow->ct->mark;
++	}
++
+ 	switch (tuplehash->tuple.xmit_type) {
+ 	case FLOW_OFFLOAD_XMIT_NEIGH:
+ 		rt = (struct rt6_info *)tuplehash->tuple.dst_cache;

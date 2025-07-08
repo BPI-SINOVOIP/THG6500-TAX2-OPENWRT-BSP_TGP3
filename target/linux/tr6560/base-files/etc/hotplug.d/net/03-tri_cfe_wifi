@@ -1,0 +1,50 @@
+#!/bin/sh
+
+. /lib/functions.sh
+
+iface_index=0
+iface_cnt=0
+wifi_table=""
+VTABLE_FILE="/tmp/vport_table"
+
+wifi_iface_cb() {
+        section_name=$1
+	devname=$2
+        mode=`uci -q get wireless.${section_name}.mode`
+        ifname=`uci -q -P /var/state/ get wireless.${section_name}.ifname`
+        device=`uci -q get wireless.${section_name}.device`
+	[ $device = $wlan0_devname ] || [ $device = $wlan1_devname ] && [ $mode = "ap" ] && {
+	iface_cnt=`expr $iface_cnt + 1`
+	}
+	[ $ifname = $devname ] && {
+	iface_index=$iface_cnt
+	wifi_table="iface_index=$iface_index;mode=$mode;ifname=$ifname;device=$device; "
+	return
+	}
+
+}
+
+	
+
+
+wlan0_devname="radio0"
+wlan1_devname="radio1"
+
+
+[ add = "$ACTION" ] && {
+
+	config_load wireless
+	config_foreach wifi_iface_cb wifi-iface $DEVICENAME
+
+	[ -z "$wifi_table" ] && return 1
+	checkmode=`echo $wifi_table | grep "mode=ap"`
+	[ -z "$checkmode" ] && return 1
+
+
+	if [ ! -d /sys/module/tri_kcfe_wifi/ ]; then
+		logger -t triwlan "$ifnameDefaultRadio0: insmod tri_kcfe_wifi.ko "
+		insmod /lib/modules/5.10.138/tri_kcfe_wifi.ko
+	fi
+
+
+}

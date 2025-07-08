@@ -1,0 +1,58 @@
+[ -e '/etc/config/network' ] || exit 0
+
+. /lib/functions/system.sh
+
+
+set_network()
+{
+    local device=$1
+    local curmode=''
+
+    # device independent config
+    uci batch << 'EOF'
+        set network.agent='interface'
+        set network.agent.proto='dhcp'
+        set network.agent.device='br-lan'
+        set network.wwan='interface'
+        set network.wwan.proto='dhcp'
+
+        set network.globals.ula_prefix=''
+        set network.@device[0].multicast_to_unicast='0'
+EOF
+
+    # device dependent config
+    case $device in
+        *)
+            curmode='bridge'
+            ;;
+    esac
+
+
+    if [ "$curmode" = 'bridge' ]; then
+        uci batch << 'EOF'
+            set network.wan.disabled='1'
+            set network.wan6.disabled='1'
+            set network.wwan.disabled='1'
+            set network.agent.disabled='0'
+            add_list network.@device[0].ports=wan
+            set network.globals.curmode='bridge'
+EOF
+    elif [ "$curmode" = 'router' ]; then
+        uci batch << 'EOF'
+            set network.wan.disabled='0'
+            set network.wan6.disabled='0'
+            set network.wwan.disabled='1'
+            set network.agent.disabled='1'
+            set network.globals.curmode='router'
+EOF
+    fi
+}
+
+main()
+{
+    local device=$(board_name)
+
+    `set_network $device`
+}
+
+main

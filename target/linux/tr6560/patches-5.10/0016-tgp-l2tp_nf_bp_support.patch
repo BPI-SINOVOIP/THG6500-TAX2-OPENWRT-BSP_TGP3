@@ -1,0 +1,12 @@
+diff -aur old/net/netfilter/core.c new/net/netfilter/core.c
+--- old/net/netfilter/core.c    2023-10-31 18:13:52.541554429 +0800
++++ new/net/netfilter/core.c    2023-10-31 18:31:11.385522582 +0800
+@@ -591,6 +591,8 @@
+ 		switch (verdict & NF_VERDICT_MASK) {
+ 		case NF_ACCEPT:
+ 			break;
++		case NF_STOP:
++			return 1;
+ 		case NF_DROP:
+ 			kfree_skb(skb);
+ 			ret = NF_DROP_GETERR(verdict);

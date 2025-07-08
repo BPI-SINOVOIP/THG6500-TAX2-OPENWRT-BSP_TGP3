@@ -1,0 +1,13 @@
+diff --git a/src/mrib.h b/src/mrib.h
+index b3dd72b..f67e60f 100644
+--- a/src/mrib.h
++++ b/src/mrib.h
+@@ -30,7 +30,7 @@
+ #include <linux/icmpv6.h>
+ #undef icmp6_filter
+ 
+-#define MRIB_DEFAULT_LIFETIME 125
++#define MRIB_DEFAULT_LIFETIME 5
+ 
+ #define IPV6_ALL_NODES_INIT		{ { { 0xff,0x02,0,0,0,0,0,0,0,0,0,0,0,0,0,0x1 } } }
+ #define INADDR_ALLIGMPV3RTRS_GROUP	cpu_to_be32(0xe0000016U)

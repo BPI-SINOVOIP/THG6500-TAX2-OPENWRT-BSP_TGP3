@@ -1,0 +1,11 @@
+diff -uprN a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+--- a/wpa_supplicant/wpa_supplicant.c	2025-03-12 14:04:00.164462502 +0800
++++ b/wpa_supplicant/wpa_supplicant.c	2025-03-12 14:08:37.807679499 +0800
+@@ -1001,6 +1001,7 @@ void wpa_supplicant_set_state(struct wpa
+ 			ssid && ssid->id_str ? ssid->id_str : "",
+ 			fils_hlp_sent ? " FILS_HLP_SENT" : "");
+ #endif /* CONFIG_CTRL_IFACE || !CONFIG_NO_STDOUT_DEBUG */
++                system("/usr/sbin/roam.sh");
+ 		wpas_clear_temp_disabled(wpa_s, ssid, 1);
+ 		wpa_s->consecutive_conn_failures = 0;
+ 		wpa_s->new_connection = 0;

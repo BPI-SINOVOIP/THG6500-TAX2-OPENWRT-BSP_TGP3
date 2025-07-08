@@ -1,0 +1,38 @@
+#!/bin/sh
+[ -e '/etc/config/dhcp' ] || exit 0
+
+. /lib/functions/system.sh
+
+
+
+
+set_dhcp()
+{
+    local device=$1
+
+    # device independent config
+    uci batch << 'EOF'
+        set dhcp.lan.dhcpv4='disabled'
+        set dhcp.lan.dhcpv6='disabled'
+        set dhcp.lan.ra='disabled'
+        delete dhcp.lan.ra_flags
+        add_list dhcp.lan.ra_flags='none'
+EOF
+
+    # device dependent config
+    case $device in
+        *)
+            ;;
+    esac
+}
+
+
+main()
+{
+    local device=$(board_name)
+
+    `set_dhcp "$device"`
+}
+
+main
+

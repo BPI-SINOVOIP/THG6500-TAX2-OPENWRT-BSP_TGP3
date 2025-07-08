@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-2.0-only
+menuconfig MTD_TRIDUCTOR
+	tristate "Triductor flash support"
+	depends on MTD
+	select MTD_BLKDEVS
+	help
+	  This is the framework for triductor flash device driver.
+
+if MTD_TRIDUCTOR
+config MTD_TRIDUCTOR_NAND
+	tristate "Triductor nandflash device support"
+	depends on MTD_TRIDUCTOR
+	select MTD_BLKDEVS
+	default n
+	help
+	  Triductor nandflash device driver.
+
+config MTD_TRIDUCTOR_NOR
+	tristate "Triductor norflash device support"
+	depends on MTD_TRIDUCTOR 
+	select MTD_BLKDEVS
+	default n
+	help
+	  Triductor norflash device driver.
+
+endif # MTD_TRIDUCTOR
+ 

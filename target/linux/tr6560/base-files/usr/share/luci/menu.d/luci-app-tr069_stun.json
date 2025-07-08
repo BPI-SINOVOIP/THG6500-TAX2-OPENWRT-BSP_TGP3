@@ -1,0 +1,14 @@
+{
+	"admin/services/management/tr069_stun": {
+		"title": "TR069-STUN",
+		"order": 10,
+		"action": {
+			"type": "cbi",
+			"path": "tr069_stun",
+			"post": { "cbi.submit": true }
+		},
+		"depends": {
+			"acl": [ "luci-app-tr069_stun" ]
+		}
+	}
+}

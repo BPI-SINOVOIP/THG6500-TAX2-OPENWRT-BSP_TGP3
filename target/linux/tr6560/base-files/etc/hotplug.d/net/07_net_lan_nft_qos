@@ -1,0 +1,44 @@
+#!/bin/sh
+
+. /lib/functions.sh
+
+do_nftqos_lan_config()
+{
+    local destinationMac sourceMac sourceIp
+
+    config_get destinationMac $1 destinationMac
+    config_get sourceMac $1 sourceMac
+    config_get sourceIp $1 sourceIp
+
+    [ "$destinationMac" != "$MAC" ] && [ "$sourceMac" != "$MAC" ] && return 1
+
+    if [ -n "$destinationMac" ]; then
+        [ "$destinationMac" != "$MAC" ] && [ "$sourceMac" != "$MAC" ] && return 1
+
+        eval "/etc/init.d/nft-qos start 2>/dev/null"
+
+    elif [ -n "$sourceIp" ]; then
+        eval "/etc/init.d/nft-qos start 2>/dev/null"
+    else
+        return 1
+    fi
+}
+
+
+do_sta()
+{
+    logger -t net_lan_nft_qos -p notice "ACTION=$ACTION" "INTERFACE=$INTERFACE" "SEQNUM=$SEQNUM"
+	sleep 3
+	local qos_section="priority"
+
+    config_load nft-qos
+    config_foreach do_nftqos_lan_config "$qos_section"
+}
+
+case "$ACTION" in
+    "up" | "down")
+        do_sta
+    ;;
+	*)
+	;;
+esac

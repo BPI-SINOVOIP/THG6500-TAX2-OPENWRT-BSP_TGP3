@@ -1,0 +1,27 @@
+#!/bin/sh
+
+#set 51xx 2G ppm
+set_2g_ppm()
+{
+	ac=`cat /etc/board.json  | grep AC`
+  	if [ -f "/tmp/wlan0_ppm_lock" ]; then	
+		exit 0
+	fi
+	if [ -n "${ac}" ]; then
+		touch /tmp/wlan0_ppm_lock
+		extpriv.sh "ramonitor0 create wlan0 ap"
+ 		mkdir -p ${wlan_lock_flag} 
+		local max=256
+		echo 8 > /proc/sys/kernel/printk
+		extpriv.sh "wlan0 flash_rw 2g_ppm"
+		local val=`dmesg | grep flash_rw | awk -F '[x}]' '{print substr($2, 7,2)}' | sed -n '$p'`
+		local res=$(printf %d "0x$val")
+		local ppm=$res
+		if [ $res -gt 137 ]; then
+			ppm=`expr $res - $max`
+		fi
+		echo 7 > /proc/sys/kernel/printk
+		iwpriv wlan0 adjust_ppm $ppm
+        fi      
+}
+set_2g_ppm

@@ -1,0 +1,212 @@
+diff -aur old/net/netfilter/nf_flow_table_ip.c new/net/netfilter/nf_flow_table_ip.c
+--- old/net/netfilter/nf_flow_table_ip.c	2023-12-08 09:49:35.229832667 +0800
++++ new/net/netfilter/nf_flow_table_ip.c	2023-12-08 09:48:24.141834847 +0800
+@@ -24,6 +24,7 @@
+ /********* l2tp ***********/
+ #define VER_L2TP 2
+ #define VER_PPP_IPV4 0x21
++#define VER_PPP_IPV6 0x57
+ #define CTBIT(ver) (ver & 0x8000)       /* Determins if control or not */
+ #define CLBIT(ver) (ver & 0x4000)       /* Length bit present.  Must be 1 for control messages */
+ #define CFBIT(ver) (ver & 0x0800)       /* Sequence bit, Presence of Ns and Nr fields flow bit? */
+@@ -139,15 +140,18 @@
+ 	puc_pos = puc_pos + ui_l2tp_hd_len;
+ 	pst_ppphdr = (tri_ppphdr_s*)puc_pos;    
+ 	us_protocol = ntohs(pst_ppphdr->us_protocol);
+-	// 只有当PPP中封装的是IPv4报文时才支持加速
+-	if (us_protocol != VER_PPP_IPV4)
++	// 只有当PPP中封装的是IPv4 或者IPv6 报文时才支持加速
++	if (us_protocol != VER_PPP_IPV4 && us_protocol != VER_PPP_IPV6)
+ 	{
+             //pr_warn("%s:%d; skb len:%d;ui_l2tp_hd_len:%d; ui_ppp_hd_len:%d;\n",__func__,__LINE__,pst_skb->len,ui_l2tp_hd_len,ui_ppp_hd_len);
+ 	    return 0;
+ 	}
+ 	// 返回l2tp头部长度, 用于删除时处理
+ 	*pos_len = ui_l2tp_hd_len+ui_pos_len+ui_ppp_hd_len;
+-	return 1;
++	if(us_protocol == VER_PPP_IPV6)
++	    return 2;
++	else
++	    return 1;
+ }
+ #endif
+ 
+@@ -299,7 +303,7 @@
+ static int nf_flow_tuple_ip(struct sk_buff *skb, const struct net_device *dev,
+ 			    struct flow_offload_tuple *tuple, u32 *hdrsize,
+ #if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
+-			    u32 offset, u32 *pos_len)
++			    u32 offset, u32 *pos_len, u32 *is_ipv6)
+ #else
+ 			    u32 offset)
+ #endif
+@@ -309,6 +313,7 @@
+ 	struct iphdr *iph;
+ #if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
+ 	unsigned int is_l2tp = 0;
++	struct ipv6hdr *ip6h;
+ #endif
+ 
+ 	if (!pskb_may_pull(skb, sizeof(*iph) + offset))
+@@ -345,7 +350,7 @@
+ 		return -1;
+ 	
+ #if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
+-	if(is_l2tp && g_iif_dev){
++	if(is_l2tp ==1 && g_iif_dev){
+ 		offset += *pos_len;
+ 		iph = (struct iphdr *)(skb_network_header(skb) + offset);
+ 		thoff = (iph->ihl * 4);
+@@ -362,6 +367,23 @@
+ 
+ 		return 0;
+ 	}
++	else if (is_l2tp == 2){
++		*is_ipv6 = 1;
++		offset += *pos_len;
++		ip6h = (struct ipv6hdr *)(skb_network_header(skb) + offset);
++		thoff = 40;
++		ports = (struct flow_ports *)(skb_network_header(skb) + offset + thoff);
++
++		tuple->src_v6		= ip6h->saddr;
++		tuple->dst_v6		= ip6h->daddr;
++		tuple->src_port		= ports->source;
++		tuple->dst_port		= ports->dest;
++		tuple->l3proto		= AF_INET6;
++		tuple->l4proto		= ip6h->nexthdr;
++		tuple->iifidx		= g_iif_dev ? g_iif_dev->ifindex : 0;
++		nf_flow_tuple_encap(skb, tuple);
++		return 0; 
++	}
+ #endif
+ 	iph = (struct iphdr *)(skb_network_header(skb) + offset);
+ 	ports = (struct flow_ports *)(skb_network_header(skb) + thoff);
+@@ -494,6 +516,90 @@
+ 	return NF_STOLEN;
+ }
+ 
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++static void nf_flow_nat_ipv6(const struct flow_offload *flow,
++			     struct sk_buff *skb,
++			     enum flow_offload_tuple_dir dir,
++			     struct ipv6hdr *ip6h);
++
++unsigned int
++nf_flow_offload_ipv6_func(void *priv, struct sk_buff *skb,
++			  const struct nf_hook_state *state,
++			  struct flow_offload_tuple_rhash *tuplehash,
++                          u32 hdrsize, u32 offset)
++{
++	struct flow_offload *flow;
++	struct nf_flowtable *flow_table = priv;
++	enum flow_offload_tuple_dir dir;
++	const struct in6_addr *nexthop;
++	struct net_device *outdev;
++	unsigned int thoff, mtu;
++	struct ipv6hdr *ip6h;
++	struct rt6_info *rt;
++	int ret;
++
++	dir = tuplehash->tuple.dir;
++	flow = container_of(tuplehash, struct flow_offload, tuplehash[dir]);
++
++	mtu = flow->tuplehash[dir].tuple.mtu + offset;
++	if (unlikely(nf_flow_exceeds_mtu(skb, mtu)))
++		return NF_ACCEPT;
++
++	ip6h = (struct ipv6hdr *)(skb_network_header(skb) + offset);
++	thoff = sizeof(*ip6h) + offset;
++	if (nf_flow_state_check(flow, ip6h->nexthdr, skb, thoff))
++		return NF_ACCEPT;
++
++	if (!nf_flow_dst_check(&tuplehash->tuple)) {
++		flow_offload_teardown(flow);
++		return NF_ACCEPT;
++	}
++
++	if (skb_try_make_writable(skb, thoff + hdrsize))
++		return NF_DROP;
++
++	flow_offload_refresh(flow_table, flow);
++
++	nf_flow_encap_pop(skb, tuplehash);
++
++	ip6h = ipv6_hdr(skb);
++	nf_flow_nat_ipv6(flow, skb, dir, ip6h);
++
++	ip6h->hop_limit--;
++	skb->tstamp = 0;
++
++	if (flow_table->flags & NF_FLOWTABLE_COUNTER)
++		nf_ct_acct_update(flow->ct, tuplehash->tuple.dir, skb->len);
++
++	if (unlikely(tuplehash->tuple.xmit_type == FLOW_OFFLOAD_XMIT_XFRM)) {
++		rt = (struct rt6_info *)tuplehash->tuple.dst_cache;
++		memset(skb->cb, 0, sizeof(struct inet6_skb_parm));
++		IP6CB(skb)->iif = skb->dev->ifindex;
++		IP6CB(skb)->flags = IP6SKB_FORWARDED;
++		return nf_flow_xmit_xfrm(skb, state, &rt->dst);
++	}
++
++	switch (tuplehash->tuple.xmit_type) {
++	case FLOW_OFFLOAD_XMIT_NEIGH:
++		rt = (struct rt6_info *)tuplehash->tuple.dst_cache;
++		outdev = rt->dst.dev;
++		skb->dev = outdev;
++		nexthop = rt6_nexthop(rt, &flow->tuplehash[!dir].tuple.src_v6);
++		skb_dst_set_noref(skb, &rt->dst);
++		neigh_xmit(NEIGH_ND_TABLE, outdev, nexthop, skb);
++		ret = NF_STOLEN;
++		break;
++	case FLOW_OFFLOAD_XMIT_DIRECT:
++		ret = nf_flow_queue_xmit(state->net, skb, tuplehash, ETH_P_IPV6);
++		if (ret == NF_DROP)
++			flow_offload_teardown(flow);
++		break;
++	}
++
++	return ret;
++}
++#endif
++
+ unsigned int
+ nf_flow_offload_ip_hook(void *priv, struct sk_buff *skb,
+ 			const struct nf_hook_state *state)
+@@ -512,6 +618,7 @@
+ 	int ret;
+ #if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
+ 	unsigned int l2tp_pos_len=0;
++	unsigned int is_ipv6=0;
+ #endif
+ 
+ 	if (skb->protocol != htons(ETH_P_IP) &&
+@@ -519,20 +626,25 @@
+ 		return NF_ACCEPT;
+ 
+ #if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
+-	if (nf_flow_tuple_ip(skb, state->in, &tuple, &hdrsize, offset, &l2tp_pos_len) < 0)
++	if (nf_flow_tuple_ip(skb, state->in, &tuple, &hdrsize, offset, &l2tp_pos_len, &is_ipv6) < 0)
+ #else
+ 	if (nf_flow_tuple_ip(skb, state->in, &tuple, &hdrsize, offset) < 0)
+ #endif
+ 		return NF_ACCEPT;
+-
+ 	tuplehash = flow_offload_lookup(flow_table, &tuple);
+ 	if (tuplehash == NULL)
+ 		return NF_ACCEPT;
+ #if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
+ 	//pull l2tp skb
+ 	if(l2tp_pos_len){
+-	  skb_pull(skb,l2tp_pos_len);
+-	  skb_reset_network_header(skb);
++		skb_pull(skb,l2tp_pos_len);
++		skb_reset_network_header(skb);
++		/* 判断是否为ipv6 over ipv4 报文 */
++		if(is_ipv6){
++	  		skb->protocol = htons(ETH_P_IPV6);
++			//printk(KERN_DEBUG"%s:%d,find ipv6 call nf_flow_offload_ipv6_hook;src:%pI6,dst:%pI6,l2tp_pos_len:%d;\n",__func__,__LINE__,&tuple.src_v6,&tuple.dst_v6,l2tp_pos_len);
++			return nf_flow_offload_ipv6_func(priv,skb,state,tuplehash,hdrsize,offset); 
++		}
+ 	}
+ #endif
+ 

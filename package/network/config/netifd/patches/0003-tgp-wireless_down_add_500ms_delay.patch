@@ -1,0 +1,15 @@
+diff -uprN a/ubus.c b/ubus.c
+--- a/ubus.c	2024-05-14 08:39:31.725494066 +0000
++++ b/ubus.c	2024-05-14 08:27:16.903435081 +0000
+@@ -1264,8 +1264,10 @@ netifd_handle_wdev_down(struct ubus_cont
+ 	if (wdev) {
+ 		wireless_device_set_down(wdev);
+ 	} else {
+-		vlist_for_each_element(&wireless_devices, wdev, node)
++		vlist_for_each_element(&wireless_devices, wdev, node) {
+ 			wireless_device_set_down(wdev);
++			usleep(500000);
++		}
+ 	}
+ 
+ 	return 0;

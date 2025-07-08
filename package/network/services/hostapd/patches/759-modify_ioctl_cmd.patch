@@ -1,0 +1,98 @@
+diff -uprN a/src/connectivity_patch/connectivity_patch.h b/src/connectivity_patch/connectivity_patch.h
+--- a/src/connectivity_patch/connectivity_patch.h	2024-07-04 01:53:53.783615131 +0000
++++ b/src/connectivity_patch/connectivity_patch.h	2024-07-04 01:51:53.094869918 +0000
+@@ -56,44 +56,59 @@ enum HWIFI_IOCTL_CMD
+      *而51命令的枚举值从0开始，其他模块下发的ioctl命令也包含从0开始的这部分，这样就会同时“组播”到自己的模块和WiFi模块，
+      *从而对WiFi模块的功能产生影响。所以将51 WiFi模块命令的枚举值调整到0x8EE0起，便规避了其他模块命令的影响。
+      */
+-    HWIFI_IOCTL_CMD_GET_STA_ASSOC_REQ_IE = 0x8EE0,       /* get sta assocate request ie */
+-    HWIFI_IOCTL_CMD_SET_AP_AUTH_ALG,            /* set auth alg to driver */
+-    HWIFI_IOCTL_CMD_SET_COUNTRY,                /* 设置国家码 */
+-    HWIFI_IOCTL_CMD_SET_SSID,                   /* 设置ssid */
+-    HWIFI_IOCTL_CMD_SET_MAX_USER,               /* 设置最大用户数 */
+-    HWIFI_IOCTL_CMD_SET_FREQ,                   /* 设置频段 */
+-    HWIFI_IOCTL_CMD_SET_WPS_IE,                 /* 设置AP WPS 信息元素 */
+-	HWIFI_IOCTL_CMD_PRIV_CONNECT,               /* linux-2.6.30 sta发起connect */
+-    HWIFI_IOCTL_CMD_PRIV_DISCONNECT,            /* linux-2.6.30 sta发起disconnect */
+-    HWIFI_IOCTL_CMD_SET_FRAG,                   /* 设置分片门限值 */
+-    HWIFI_IOCTL_CMD_SET_RTS,                    /* 设置RTS 门限值 */
+-
+-    //CONFIG_CONNECTIVITY_11R_PATCH
+-    HWIFI_IOCTL_CMD_SET_MLME,                   /* 设置MLME操作（认证、关联） */
+-    //_PRE_WLAN_WEB_CMD_COMM
+-    HWIFI_IOCTL_CMD_GET_NEIGHB_INFO,            /* 获取邻居AP扫描信息 */
+-    HWIFI_IOCTL_CMD_GET_HW_STAT,                /* 获取硬件流量统计 */
+-    HWIFI_IOCTL_CMD_GET_WME_STAT,               /* 获取WME队列统计 */
+-    HWIFI_IOCTL_CMD_GET_STA_11V_ABILITY,        /* 获取指定STA的11v能力信息 */
+-    HWIFI_IOCTL_CMD_11V_CHANGE_AP,              /* 通知sta切换到指定ap */
+-    HWIFI_IOCTL_CMD_GET_STA_11K_ABILITY,        /* 获取指定STA的11v能力信息 */
+-    HWIFI_IOCTL_CMD_SET_STA_BCN_REQUEST,        /* 通知STA的上报beacon信息 */
+-    HWIFI_IOCTL_CMD_GET_SNOOP_TABLE,            /* 获取组播组及其成员的mac地址 */
+-    HWIFI_IOCTL_CMD_GET_ALL_STA_INFO_EXT,       /* 获取所有已关联STA链路信息，包含增量部分 */
+-    HWIFI_IOCTL_CMD_GET_VAP_WDS_INFO,           /* 获取WDS VAP节点信息 */
+-    HWIFI_IOCTL_CMD_GET_STA_11H_ABILITY,        /* 获取指定STA的11h能力信息 */
+-    HWIFI_IOCTL_CMD_GET_STA_11R_ABILITY,        /* 获取指定STA的11r能力信息 */
+-    HWIFI_IOCTL_CMD_GET_TX_DELAY_AC,            /* 获取指定所有AC的发送时延信息 */
+-    HWIFI_IOCTL_CMD_GET_CAR_INFO,               /* 获取指定device下面的car限速配置信息 */
+-    HWIFI_IOCTL_CMD_GET_BLKWHTLST,              /* 获取黑白名单 */
++    HWIFI_IOCTL_CMD_GET_STA_ASSOC_REQ_IE = 0x8EE0, /* get sta assocate request ie */
++    HWIFI_IOCTL_CMD_SET_AP_AUTH_ALG,               /* set auth alg to driver */
++    HWIFI_IOCTL_CMD_SET_COUNTRY,                   /* 设置国家码 */
++    HWIFI_IOCTL_CMD_SET_SSID,                      /* 设置ssid */
++    HWIFI_IOCTL_CMD_SET_MAX_USER,                  /* 设置最大用户数 */
++    HWIFI_IOCTL_CMD_SET_FREQ,                      /* 设置频段 */
++    HWIFI_IOCTL_CMD_SET_WPS_IE,                    /* 设置AP WPS 信息元素 */
++    HWIFI_IOCTL_CMD_PRIV_CONNECT,                  /* linux-2.6.30 sta发起connect */
++    HWIFI_IOCTL_CMD_PRIV_DISCONNECT,               /* linux-2.6.30 sta发起disconnect */
++    HWIFI_IOCTL_CMD_SET_FRAG,                      /* 设置分片门限值 */
++    HWIFI_IOCTL_CMD_SET_RTS,                       /* 设置RTS 门限值 */
++    // _PRE_WLAN_FEATURE_NULINK
++    HWIFI_IOCTL_CMD_PRIV_KICK_USER,          /* AP剔除用户 */
++    /* AP 添加私有IE接口，原为HWIFI_IOCTL_CMD_SET_OKC_IE，是nulink设置okc ie专用 */
++    HWIFI_IOCTL_CMD_SET_VENDOR_IE,
++    HWIFI_IOCTL_CMD_SET_WHITE_LST_SSIDHIDEN, /* 设置hlink白名单 */
++    HWIFI_IOCTL_CMD_FBT_SCAN,                /* 启动或停止nulink fbt侦听 */
++    HWIFI_IOCTL_CMD_GET_ALL_STA_INFO,        /* 获取所有已关联STA链路信息 */
++    HWIFI_IOCTL_CMD_GET_STA_INFO_BY_MAC,     /* 获取指定已关联STA链路信息 */
++    HWIFI_IOCTL_CMD_GET_CUR_CHANNEL,         /* 获取工作信道 */
++    HWIFI_IOCTL_CMD_SET_SCAN_STAY_TIME,      /* 设置扫描时工作信道驻留时间和侦听信道驻留时间 */
++    // _PRE_WLAN_WEB_CMD_COMM
++    HWIFI_IOCTL_CMD_SET_BEACON, /* hostapd只配置加密参数私有接口 */
++    // _PRE_WLAN_FEATURE_11R_AP
++    HWIFI_IOCTL_CMD_SET_MLME, /* 设置MLME操作（认证、关联） */
++    // _PRE_WLAN_WEB_CMD_COMM
++    HWIFI_IOCTL_CMD_GET_NEIGHB_INFO,      /* 获取邻居AP扫描信息 */
++    HWIFI_IOCTL_CMD_GET_HW_STAT,          /* 获取硬件流量统计 */
++    HWIFI_IOCTL_CMD_GET_WME_STAT,         /* 获取WME队列统计 */
++    HWIFI_IOCTL_CMD_GET_STA_11V_ABILITY,  /* 获取指定STA的11v能力信息 */
++    HWIFI_IOCTL_CMD_11V_CHANGE_AP,        /* 通知sta切换到指定ap */
++    HWIFI_IOCTL_CMD_GET_STA_11K_ABILITY,  /* 获取指定STA的11v能力信息 */
++    HWIFI_IOCTL_CMD_SET_STA_BCN_REQUEST,  /* 通知STA的上报beacon信息 */
++    HWIFI_IOCTL_CMD_GET_SNOOP_TABLE,      /* 获取组播组及其成员mac */
++    HWIFI_IOCTL_CMD_GET_ALL_STA_INFO_EXT, /* 获取所有已关联STA链路信息，包含增量部分 */
++    HWIFI_IOCTL_CMD_GET_VAP_WDS_INFO,     /* 获取WDS VAP节点信息 */
++    HWIFI_IOCTL_CMD_GET_STA_11H_ABILITY,  /* 获取指定STA的11h能力信息 */
++    HWIFI_IOCTL_CMD_GET_STA_11R_ABILITY,  /* 获取指定STA的11r能力信息 */
++    HWIFI_IOCTL_CMD_GET_TX_DELAY_AC,      /* 获取指定所有AC的发送时延信息 */
++    HWIFI_IOCTL_CMD_GET_CAR_INFO,         /* 获取指定device下面的car限速配置信息 */
++    HWIFI_IOCTL_CMD_GET_BLKWHTLST,        /* 获取黑白名单 */
+     HWIFI_IOCTL_CMD_GET_CHR_AP_STATUS,          /* CPE获取CHR AP信息 */
+     HWIFI_IOCTL_CMD_GET_CHR_STA_STATUS,         /* CPE获取CHR STA信息 */
+-//#ifdef _PRE_WLAN_REPORT_WIFI_ABNORMAL
+     HWIFI_IOCTL_CMD_STA_REPORT,                 /* STA信息下发给驱动 */
+-//#endif
+-    HWIFI_IOCTL_CMD_GET_STA_STATS,              /* 获取STA收发报文字节数的统计*/
+-
+-    HWIFI_IOCTL_CMD_GET_VAP_BROADCAST_STATUS,    /* 获取ap组播报文*/
++    HWIFI_IOCTL_CMD_SET_WPS_LED,
++    HWIFI_IOCTL_CMD_GET_STA_STATS,              /* 获取STA收发报文字节数的统计 */
++    HWIFI_IOCTL_CMD_GET_VAP_BROADCAST_STATUS,    /* 获取ap组播报文 */
++    HWIFI_IOCTL_CMD_GET_VENDOR_IE,              /* AP获取私有IE接口 */
++    HWIFI_IOCTL_CMD_RESET_STATS,                /* 将/proc/net/dev下的统计清零 */
++    HWIFI_IOCTL_CMD_ACCESS_EVENT,               /* 用户上下线事件上报 */
++    HWIFI_IOCTL_CMD_SET_MULTIAP_TLV = 0x8F0C,
++    HWIFI_IOCTL_CMD_SET_WPS_STATUS = 0x8F0D,
++    HWIFI_IOCTL_CMD_ADD_STA_NODE   = 0x8F1D,    /* 增加sta 节点 */
+     HWIFI_IOCTL_CMD_NUM
+ };
+ #ifdef CONFIG_CONNECTIVITY_11R_PATCH

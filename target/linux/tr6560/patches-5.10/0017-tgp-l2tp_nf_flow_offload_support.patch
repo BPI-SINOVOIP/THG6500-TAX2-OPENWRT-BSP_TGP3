@@ -1,0 +1,291 @@
+diff -aur old/net/netfilter/Kconfig new/net/netfilter/Kconfig
+--- old/net/netfilter/Kconfig	2023-11-13 19:02:03.299033146 +0800
++++ new/net/netfilter/Kconfig	2023-11-13 17:08:34.591241873 +0800
+@@ -19,6 +19,13 @@
+ config NETFILTER_FAMILY_ARP
+ 	bool
+ 
++config L2TP_NF_FLOW_OFFLOAD
++	bool "Netfilter flow offload l2tp bybass"
++	default n
++	help
++	  If this option is enabled, the kernel will bypass l2tp pkgs 
++	  in NF_FLOW_OFFLOAD.
++
+ config NETFILTER_NETLINK_ACCT
+ 	tristate "Netfilter NFACCT over NFNETLINK interface"
+ 	depends on NETFILTER_ADVANCED
+diff -aur old/net/netfilter/nf_flow_table_core.c new/net/netfilter/nf_flow_table_core.c
+--- old/net/netfilter/nf_flow_table_core.c	2023-11-13 19:02:03.299033146 +0800
++++ new/net/netfilter/nf_flow_table_core.c	2023-11-13 18:51:21.331052826 +0800
+@@ -13,6 +13,9 @@
+ #include <net/netfilter/nf_conntrack_l4proto.h>
+ #include <net/netfilter/nf_conntrack_tuple.h>
+ 
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++struct net_device *g_iif_dev = NULL;
++#endif
+ static DEFINE_MUTEX(flowtable_lock);
+ static LIST_HEAD(flowtables);
+ 
+@@ -607,11 +610,30 @@
+ }
+ EXPORT_SYMBOL_GPL(nf_flow_table_free);
+ 
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++static void nf_flow_l2tpfo_netdev_event(struct net_device *dev, unsigned long event)
++{
++	/* 排查一些非l2tp interface情况*/
++	if ((dev->flags & (IFF_BROADCAST|IFF_MULTICAST)) == 0)
++		return;
++	
++	if ( strstr(dev->name, "l2tp-") ){
++		if ( event == NETDEV_UP )
++			g_iif_dev = dev;
++		else if ( event == NETDEV_DOWN )
++			g_iif_dev = NULL;
++	}
++}
++#endif
++
+ static int nf_flow_table_netdev_event(struct notifier_block *this,
+ 				      unsigned long event, void *ptr)
+ {
+ 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+ 
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++	nf_flow_l2tpfo_netdev_event(dev, event);
++#endif
+ 	if (event != NETDEV_DOWN)
+ 		return NOTIFY_DONE;
+ 
+diff -aur old/net/netfilter/nf_flow_table_ip.c new/net/netfilter/nf_flow_table_ip.c
+--- old/net/netfilter/nf_flow_table_ip.c	2023-11-13 19:02:02.515033170 +0800
++++ new/net/netfilter/nf_flow_table_ip.c	2023-11-13 18:50:50.335053777 +0800
+@@ -20,6 +20,137 @@
+ #include <linux/tcp.h>
+ #include <linux/udp.h>
+ 
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++/********* l2tp ***********/
++#define VER_L2TP 2
++#define VER_PPP_IPV4 0x21
++#define CTBIT(ver) (ver & 0x8000)       /* Determins if control or not */
++#define CLBIT(ver) (ver & 0x4000)       /* Length bit present.  Must be 1 for control messages */
++#define CFBIT(ver) (ver & 0x0800)       /* Sequence bit, Presence of Ns and Nr fields flow bit? */
++#define COBIT(ver) (ver & 0x0200)       /* Offset size bit*/
++#define CVER(ver) (ver & 0x0007)        /* Version of encapsulation */
++
++typedef struct
++{
++   u16 us_packet_type;
++   /*
++    TYPE          0x8000   (0=Data, 1=Control)
++    LENGTH        0x4000   
++    SEQUENCE      0x0800   
++    OFFSET        0x0200   
++    _PRIORITY     0x0100   
++    VERSION_MASK  0x000f   
++   */
++   u16 us_tunnel_id;
++   u16 us_session_id;
++}tri_l2tphdr_s;
++
++typedef struct
++{
++   u8   uc_address;
++   u8   uc_control;
++   u16 us_protocol;
++}tri_ppphdr_s;
++
++extern struct net_device *g_iif_dev;
++
++#if 0
++unsigned int tri_tx_cap_print_pkt(struct sk_buff *skb, unsigned int len)
++{
++    unsigned int i;
++
++    u8 *pkt_head = skb->data;
++    unsigned int pkt_size = len;
++    u8 *pos = pkt_head;
++
++    printk("\n========receive pkt info============\n");
++
++    for (i = 0; i < pkt_size; i++) {
++        printk(KERN_CONT "%02x ", *(pos + i));
++        /* 打印格式排版，16字节换一行 */
++        if (((i + 1) % 16) == 0)
++            printk("\n");
++    }
++
++    printk("\n========receive pkt info end========\n");
++
++    return 0;
++}
++#endif
++
++static unsigned int nf_bp_check_l2tp(struct sk_buff *pst_skb, unsigned int *pos_len)
++{
++        u8  *puc_pos   = pst_skb->data;
++        struct iphdr *piphdr = ip_hdr(pst_skb);
++        struct udphdr *uh;
++        __be16  sport=0;
++        __be16  dport=0;
++        u16 l2tp_port = 1701;
++
++	uh = (struct udphdr *)(puc_pos + 4*piphdr->ihl);
++	dport = ntohs(uh->dest);
++	sport = ntohs(uh->source);
++	if (dport==l2tp_port && sport==l2tp_port){
++		*pos_len = *pos_len + 4*piphdr->ihl + sizeof(struct udphdr);
++		return 1;
++	}
++
++	return 0;
++}
++
++static unsigned int nf_bp_l2tp_2_ip(struct sk_buff *pst_skb, unsigned int *pos_len)
++{
++
++	u32 ui_l2tp_hd_len  = 0;
++	u32 ui_ppp_hd_len  = 0;
++	u32 ui_pos_len      = 0;
++	u16 us_pkt_type     = 0;
++	u16 us_protocol     = 0;
++	u8  *puc_pos        = NULL;
++	tri_l2tphdr_s   *pst_l2tphdr    = NULL; 
++	tri_ppphdr_s    *pst_ppphdr     = NULL; 
++
++	if(nf_bp_check_l2tp(pst_skb,&ui_pos_len)==0)
++		return 0;
++
++	// 1. 指针指向l2tp头
++	puc_pos = pst_skb->data + ui_pos_len;
++	pst_l2tphdr = (tri_l2tphdr_s*)puc_pos;
++	us_pkt_type = ntohs(pst_l2tphdr->us_packet_type);
++	// 只有当报文为l2tp数据报文并且l2tp版本为2时才支持加速
++	if (CTBIT(us_pkt_type) != 0 || CVER(us_pkt_type) != VER_L2TP)
++	{
++            //pr_warn("%s:%d;us_pkt_type:0x%x; return 0;\n",__func__,__LINE__,us_pkt_type);
++	    return 0;
++	}
++	ui_l2tp_hd_len = sizeof(tri_l2tphdr_s);
++	//如果l2tp头部length bit不为0，则l2tp头部长度加2
++	if (CLBIT(us_pkt_type))
++	    ui_l2tp_hd_len += 2;
++	//如果l2tp头部sequence bit(flow control)不为0，则l2tp头部长度加4
++	if (CFBIT(us_pkt_type))
++	    ui_l2tp_hd_len += 4; 
++	//如果l2tp头部offset size bit不为0，则l2tp头部长度加2
++	if (COBIT(us_pkt_type))
++	    ui_l2tp_hd_len += 2; 
++	    
++	// 2. 指针指向ppp头继续解析
++	ui_ppp_hd_len = sizeof(tri_ppphdr_s);
++	puc_pos = puc_pos + ui_l2tp_hd_len;
++	pst_ppphdr = (tri_ppphdr_s*)puc_pos;    
++	us_protocol = ntohs(pst_ppphdr->us_protocol);
++	// 只有当PPP中封装的是IPv4报文时才支持加速
++	if (us_protocol != VER_PPP_IPV4)
++	{
++            //pr_warn("%s:%d; skb len:%d;ui_l2tp_hd_len:%d; ui_ppp_hd_len:%d;\n",__func__,__LINE__,pst_skb->len,ui_l2tp_hd_len,ui_ppp_hd_len);
++	    return 0;
++	}
++	// 返回l2tp头部长度, 用于删除时处理
++	*pos_len = ui_l2tp_hd_len+ui_pos_len+ui_ppp_hd_len;
++	return 1;
++}
++#endif
++
+ static int nf_flow_state_check(struct flow_offload *flow, int proto,
+ 			       struct sk_buff *skb, unsigned int thoff)
+ {
+@@ -167,11 +304,18 @@
+ 
+ static int nf_flow_tuple_ip(struct sk_buff *skb, const struct net_device *dev,
+ 			    struct flow_offload_tuple *tuple, u32 *hdrsize,
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++			    u32 offset, u32 *pos_len)
++#else
+ 			    u32 offset)
++#endif
+ {
+ 	struct flow_ports *ports;
+ 	unsigned int thoff;
+ 	struct iphdr *iph;
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++	unsigned int is_l2tp = 0;
++#endif
+ 
+ 	if (!pskb_may_pull(skb, sizeof(*iph) + offset))
+ 		return -1;
+@@ -191,6 +335,10 @@
+ 		break;
+ 	case IPPROTO_UDP:
+ 		*hdrsize = sizeof(struct udphdr);
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++		/* l2tp bypass */
++		is_l2tp = nf_bp_l2tp_2_ip(skb,pos_len);
++#endif
+ 		break;
+ 	default:
+ 		return -1;
+@@ -201,7 +349,26 @@
+ 
+ 	if (!pskb_may_pull(skb, thoff + *hdrsize))
+ 		return -1;
++	
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++	if(is_l2tp && g_iif_dev){
++		offset += *pos_len;
++		iph = (struct iphdr *)(skb_network_header(skb) + offset);
++		thoff = (iph->ihl * 4);
++		ports = (struct flow_ports *)(skb_network_header(skb) + offset + thoff);
++
++		tuple->src_v4.s_addr	= iph->saddr;
++		tuple->dst_v4.s_addr	= iph->daddr;
++		tuple->src_port		= ports->source;
++		tuple->dst_port		= ports->dest;
++		tuple->l3proto		= AF_INET;
++		tuple->l4proto		= iph->protocol;
++		tuple->iifidx		= g_iif_dev ? g_iif_dev->ifindex : 0;
++		nf_flow_tuple_encap(skb, tuple);
+ 
++		return 0;
++	}
++#endif
+ 	iph = (struct iphdr *)(skb_network_header(skb) + offset);
+ 	ports = (struct flow_ports *)(skb_network_header(skb) + thoff);
+ 
+@@ -349,17 +516,31 @@
+ 	struct iphdr *iph;
+ 	__be32 nexthop;
+ 	int ret;
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++	unsigned int l2tp_pos_len=0;
++#endif
+ 
+ 	if (skb->protocol != htons(ETH_P_IP) &&
+ 	    !nf_flow_skb_encap_protocol(skb, htons(ETH_P_IP), &offset))
+ 		return NF_ACCEPT;
+ 
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++	if (nf_flow_tuple_ip(skb, state->in, &tuple, &hdrsize, offset, &l2tp_pos_len) < 0)
++#else
+ 	if (nf_flow_tuple_ip(skb, state->in, &tuple, &hdrsize, offset) < 0)
++#endif
+ 		return NF_ACCEPT;
+ 
+ 	tuplehash = flow_offload_lookup(flow_table, &tuple);
+ 	if (tuplehash == NULL)
+ 		return NF_ACCEPT;
++#if defined(CONFIG_L2TP_NF_FLOW_OFFLOAD)
++	//pull l2tp skb
++	if(l2tp_pos_len){
++	  skb_pull(skb,l2tp_pos_len);
++	  skb_reset_network_header(skb);
++	}
++#endif
+ 
+ 	dir = tuplehash->tuple.dir;
+ 	flow = container_of(tuplehash, struct flow_offload, tuplehash[dir]);

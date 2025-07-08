@@ -1,0 +1,174 @@
+#!/bin/sh
+. /lib/functions.sh
+. /usr/share/libubox/jshn.sh
+
+[ "$1" != "run" ] && return
+UCI_GET_VARSTATE="/sbin/uci -q ${UCI_CONFIG_DIR:+-c $UCI_CONFIG_DIR} -P /var/state get"
+UCI_SET_VARSTATE="/sbin/uci -q ${UCI_CONFIG_DIR:+-c $UCI_CONFIG_DIR} -P /var/state set"
+UCI_ADD_VARSTATE="/sbin/uci -q ${UCI_CONFIG_DIR:+-c $UCI_CONFIG_DIR} -P /var/state add"
+UCI_DELETE_VARSTATE="/sbin/uci -q ${UCI_CONFIG_DIR:+-c $UCI_CONFIG_DIR} -P /var/state delete"
+UCI_SHOW_VARSTATE="/sbin/uci -q ${UCI_CONFIG_DIR:+-c $UCI_CONFIG_DIR} -P /var/state show"
+
+temp_encryption=""
+temp_authentication=""
+temp_ciphers=""
+temp_hwmode=""
+
+append_encry() {
+	temp_encryption="$temp_encryption$1"
+}
+
+append_authentication() {
+	temp_authentication="$temp_authentication$1"
+}
+
+append_ciphers() {
+	temp_ciphers="$temp_ciphers$1"
+}
+
+append_hwmode() {
+	temp_hwmode="$temp_hwmode,$1"
+}
+
+scan() {
+	scan_data=$(ubus call iwinfo scan '{ "device": "'$1'" }')
+	json_load "$scan_data"
+	json_select results
+	json_get_keys scan_res
+	for i in $scan_res ; do
+		json_select $i
+
+		#radio
+		radio="$1"
+		#band
+		if [ "$radio" == "radio0" ]; then
+			band="2.4GHz"
+		else
+			band="5GHz"
+		fi
+		#ssid
+		json_get_var ssid ssid
+                [ "$ssid"  == "unknown" ] && ssid = ""
+		#bssid
+		json_get_var bssid bssid
+		#mode
+		json_get_var mode mode
+		if [ "$mode" == "adhoc" ]; then
+			mode="AdHoc"
+		else
+			mode="Infrastructure"
+		fi
+		#channel
+		json_get_var channel channel
+		#signal
+		json_get_var signal signal
+		#hwmodes
+		json_for_each_item append_hwmode hwmodes
+		hwmode="${temp_hwmode/,/}"
+		#encry
+		json_select encryption 
+		json_for_each_item append_encry wpa
+		if [[ $temp_encryption == *"2"* && $temp_encryption == *"3"* ]]; then
+			encry="WPA2-PSK-WPA3-SAE"
+		elif [[ $temp_encryption == *"1"* && $temp_encryption == *"2"* ]]; then
+			encry="WPA-WPA2"
+		elif [[ $temp_encryption == *"3"* ]]; then
+			encry="WPA3-SAE"
+		elif [[ $temp_encryption == *"2"* ]]; then
+			encry="WPA2"
+		elif [[ $temp_encryption == *"1"* ]]; then
+			encry="WPA"
+		elif [ -z $temp_encryption ]; then
+			encry="none"
+		fi
+		json_for_each_item append_authentication authentication
+		[[ $temp_authentication == *"802.1x"* ]] && encry=$encry"-Enterprise"
+		#encrymode
+		json_for_each_item append_ciphers ciphers
+		if [[ $temp_ciphers == *"ccmp"* && $temp_ciphers == *"tkip"* ]]; then
+                        ciphers="TKIP,AES"
+		elif [[ $temp_ciphers == *"tkip"* ]]; then
+                        ciphers="TKIP"
+		elif [[ $temp_ciphers == *"ccmp"* ]]; then
+                        ciphers="AES"
+		elif [ -z $temp_ciphers ]; then
+			ciphers=""
+		fi
+		json_select ..
+
+		#bandwidth
+		json_get_keys keys
+		if [[ "$keys" == *"vht_operation"* ]]; then
+			json_select vht_operation
+			json_get_var center_freq_2 center_freq_2
+			json_get_var channel_width channel_width
+			if [ $center_freq_2 -eq 0 ]; then
+				[ $channel_width -eq 40 ] && bandwidth="40MHz"
+				[ $channel_width -eq 80 ] && bandwidth="80MHz"
+			else
+				[ $channel_width -eq 40 ] && bandwidth="80MHz"
+				[ $channel_width -eq 80 ] && bandwidth="160MHz"
+			fi
+		else
+			json_select ht_operation
+			json_get_var secondary_channel_offset secondary_channel_offset
+			if [ "$secondary_channel_offset" == "no secondary" ]; then
+				bandwidth="20MHz"
+			else
+				bandwidth="40MHz"
+			fi
+		
+		fi
+		json_select ..
+		
+		$UCI_ADD_VARSTATE easycwmp Neighbor
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].radio="$radio"
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].band="$band"
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].ssid="$ssid"
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].bssid="$bssid"
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].mode="$mode"
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].channel="$channel"
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].signal="$signal"
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].encryption="$encry"
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].encryptionmode="$ciphers"
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].hwmode="$hwmode"
+		$UCI_SET_VARSTATE easycwmp.@Neighbor[-1].bandwidth="$bandwidth"
+		
+		json_select ..
+		temp_encryption=""
+		temp_authentication=""	
+		temp_hwmode=""	
+		temp_ciphers=""
+	done
+}
+
+wifi_iface_cb() {
+	scan "$1" 
+}
+
+neighbor_easycwmp() {
+	delete_all_neighbor
+	config_load wireless
+	config_foreach wifi_iface_cb wifi-device
+	event_diagnostic
+}
+
+delete_all_neighbor() {
+	local j
+	for j in $($UCI_SHOW_VARSTATE easycwmp | grep "easycwmp.@Neighbor.*=Neighbor"); do
+		$UCI_DELETE_VARSTATE easycwmp.@Neighbor[-1]
+	done
+}
+
+event_diagnostic() {
+	local e=1
+	local i=0
+	while [ "$e" != 0 -a $i -lt 3 ]; do	
+		ubus -t 1 call tr069 inform '{"event":"8 DIAGNOSTICS COMPLETE"}'
+		e=$?
+		[ "$e" != "0" ] && sleep 1;
+		let i++
+	done
+}
+
+[ "$1" == "run" ] && { neighbor_easycwmp 2>/dev/null; exit 0; }

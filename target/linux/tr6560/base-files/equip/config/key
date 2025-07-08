@@ -1,0 +1,38 @@
+#!/bin/sh
+
+. /lib/functions.sh
+. /lib/functions/system.sh
+
+action=$1
+value=$2
+len=0
+case "$action" in
+	set)
+		if [ -z "$value" ]; then
+			echo "key is null!"
+			exit 0
+		fi
+		len=${#value}
+		if [ $len -ne 44 ]; then
+			echo "key is unknown!"
+			exit 0
+		fi
+		MAC_ADDR=$(nvram get mac)
+		if [ -z "$MAC_ADDR" ];then
+			echo "mac is unset!"
+			exit 0
+		fi
+		echo -n "$MAC_ADDR" > /proc/driver/bsp_sd
+		echo -n "$value" > /proc/driver/bsp_sd
+
+		#check set ok
+		MAC_SET=$(cat /proc/driver/bsp_sd | cut -d ';' -f2 | cut -d '=' -f2)
+		if [ "$MAC_SET" = "00:00:00:00:00:00" ]; then
+			echo "set fail!"
+		else
+			echo "set ok."
+		fi
+		;;
+	*)
+		;;
+esac

@@ -1,0 +1,26 @@
+[ ! -e /etc/config/prplmesh ] && exit 0
+
+. /lib/functions/system.sh
+
+set_mesh()
+{
+    local device=$1
+
+    case $device in
+        *)
+            ;;
+    esac
+}
+
+main()
+{
+    local device=$(board_name)
+
+    # generate mesh related config
+    `set_mesh $device`
+}
+
+
+main
+
+exit 0

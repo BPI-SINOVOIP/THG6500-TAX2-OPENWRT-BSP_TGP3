@@ -1,0 +1,51 @@
+# Copyright (C) 2006 OpenWrt.org
+# Copyright (C) 2010 Vertical Communications
+
+. /lib/upgrade/common.sh
+. /lib/functions.sh
+
+missing_lines() {
+	local file1 file2 line
+	file1="$1"
+	file2="$2"
+	oIFS="$IFS"
+	IFS=":"
+	while read line; do
+		set -- $line
+		grep -q "^$1:" "$file2" || echo "$*"
+	done < "$file1"
+	IFS="$oIFS"
+}
+
+DATA_PART="rootfs_data"
+DATA_DEV=$(find_char_mtd_part $DATA_PART)
+DATA_DEV_BLOCK=$(find_mtd_part $DATA_PART)
+
+do_mount_root() {
+	local magic
+	
+	magic="$(get_magic_word $DATA_DEV cat)"
+	[ "$magic" != "8519" ] && {
+		echo "magic is $magic err(refer: 8519)"
+		# format jffs2
+		echo -e "\xde\xad\xc0\xde" | dd of=$DATA_DEV_BLOCK bs=1 count=4 conv=notrunc
+	}
+
+	mount_root
+	boot_run_hook preinit_mount_root
+	[ -f /sysupgrade.tgz -o -f /tmp/sysupgrade.tar ] && {
+		echo "- config restore -"
+		cp /etc/passwd /etc/group /etc/shadow /tmp
+		cd /
+		[ -f /sysupgrade.tgz ] && tar xzf /sysupgrade.tgz
+		[ -f /tmp/sysupgrade.tar ] && tar xf /tmp/sysupgrade.tar
+		missing_lines /tmp/passwd /etc/passwd >> /etc/passwd
+		missing_lines /tmp/group /etc/group >> /etc/group
+		missing_lines /tmp/shadow /etc/shadow >> /etc/shadow
+		rm /tmp/passwd /tmp/group /tmp/shadow
+		# Prevent configuration corruption on a power loss
+		sync
+	}
+}
+
+[ "$INITRAMFS" = "1" ] || boot_hook_add preinit_main do_mount_root
